@@ -15,11 +15,10 @@ public class LogFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
-        HttpServletRequest httpRequest = (HttpServletRequest) request;
-        CachedBodyHttpServletRequest cachedRequest = new CachedBodyHttpServletRequest(httpRequest);
+        CachedBodyHttpServletRequest cachedRequest = new CachedBodyHttpServletRequest(request);
 
         // 요청의 헤더와 바디를 로그로 출력
-        log.debug("\n<Headers>\n {}\n" +
+        log.debug("\n<Headers>\n{}\n" +
                 "<Body>\n{}\n" +
                 "<ETC>\n" +
                 "request url: {}\n",
@@ -28,16 +27,13 @@ public class LogFilter extends OncePerRequestFilter {
                 cachedRequest.getRequestURL()
         );
 
-        long startTime = System.currentTimeMillis();
-        // 필터 체인에 캐싱된 요청을 전달
-        filterChain.doFilter(cachedRequest, response);
-        long endTime = System.currentTimeMillis();
-
         // 응답을 로깅하기 위해 커스텀 HttpServletResponseWrapper 사용
         CustomHttpResponseWrapper responseWrapper = new CustomHttpResponseWrapper(response);
 
+        long startTime = System.currentTimeMillis();
         // 필터 체인을 통과시키면서, 응답을 캡처
         filterChain.doFilter(request, responseWrapper);
+        long endTime = System.currentTimeMillis();
 
         // 응답을 로깅하는 부분
         log.debug("\n<Response>\n" +
