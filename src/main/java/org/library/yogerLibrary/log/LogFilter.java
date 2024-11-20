@@ -32,7 +32,7 @@ public class LogFilter extends OncePerRequestFilter {
 
         long startTime = System.currentTimeMillis();
         // 필터 체인을 통과시키면서, 응답을 캡처
-        filterChain.doFilter(request, responseWrapper);
+        filterChain.doFilter(cachedRequest, responseWrapper);
         long endTime = System.currentTimeMillis();
 
         // 응답을 로깅하는 부분
