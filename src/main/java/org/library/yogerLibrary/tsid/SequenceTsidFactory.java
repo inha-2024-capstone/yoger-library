@@ -3,6 +3,7 @@ package org.library.yogerLibrary.tsid;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class SequenceTsidFactory {
 
@@ -17,6 +18,8 @@ public class SequenceTsidFactory {
     private final int nodeId; // 고유 노드 ID
     private final AtomicLong sequence = new AtomicLong(0); // 시퀀스 값
     private final AtomicLong lastTimestamp = new AtomicLong(-1L); // 마지막 타임스탬프
+
+    private final ReentrantLock lock = new ReentrantLock();
 
 
     public SequenceTsidFactory(int nodeId) {
@@ -37,8 +40,13 @@ public class SequenceTsidFactory {
 
             if (currentTimestamp > lastTs) {
                 // 타임스탬프가 변경되었으면 시퀀스를 0으로 초기화
-                Optional<Long> newId = initializeSequenceAndGetId(lastTs, currentTimestamp);
-                if (newId.isPresent()) return newId.get();
+                lock.lock();
+                try {
+                    Optional<Long> newId = initializeSequenceAndGetId(lastTs, currentTimestamp);
+                    if (newId.isPresent()) return newId.get();
+                } finally {
+                    lock.unlock();
+                }
             }
             else if (currentTimestamp == lastTs) {
                 // 같은 밀리초면 시퀀스를 증가
@@ -61,7 +69,7 @@ public class SequenceTsidFactory {
         return System.currentTimeMillis() - STANDARD_EPOCH_MILLI;
     }
 
-    private synchronized Optional<Long> initializeSequenceAndGetId(long lastTs, long currentTimestamp) {
+    private Optional<Long> initializeSequenceAndGetId(long lastTs, long currentTimestamp) {
         if (lastTimestamp.compareAndSet(lastTs, currentTimestamp)) {
             sequence.set(-1L);
             return Optional.of(generateId(currentTimestamp, sequence.incrementAndGet()));
