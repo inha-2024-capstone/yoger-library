@@ -16,8 +16,11 @@ public class SequenceTsidFactory {
 
 
     private final int nodeId; // 고유 노드 ID
-    private final AtomicLong sequence = new AtomicLong(0); // 시퀀스 값
-    private final AtomicLong lastTimestamp = new AtomicLong(-1L); // 마지막 타임스탬프
+    //private final AtomicLong sequence = new AtomicLong(0); // 시퀀스 값
+    //private final AtomicLong lastTimestamp = new AtomicLong(-1L); // 마지막 타임스탬프
+
+    private long sequence = 0L;
+    private long lastTimestamp = -1L;
 
     private final ReentrantLock lock = new ReentrantLock();
 
@@ -34,47 +37,46 @@ public class SequenceTsidFactory {
     }
 
     public long getId() {
-        while (true) {
+        lock.lock();
+        try {
             long currentTimestamp = getEpochMilli();
-            long lastTs = lastTimestamp.get();
 
-            if (currentTimestamp > lastTs) {
-                // 타임스탬프가 변경되었으면 시퀀스를 0으로 초기화
-                lock.lock();
-                try {
-                    Optional<Long> newId = initializeSequenceAndGetId(lastTs, currentTimestamp);
-                    if (newId.isPresent()) return newId.get();
-                } finally {
-                    lock.unlock();
+            // 1. 시간이 역전된 경우 (Clock Drift 방어)
+            if (currentTimestamp < lastTimestamp) {
+                throw new IllegalStateException("Clock moved backwards.");
+            }
+
+            // 2. 같은 밀리초인 경우
+            if (currentTimestamp == lastTimestamp) {
+                sequence = (sequence + 1) & MAX_SEQUENCE;
+                // 시퀀스 초과 시 다음 밀리초까지 대기
+                if (sequence == 0) {
+                    currentTimestamp = waitNextMillis(lastTimestamp);
                 }
             }
-            else if (currentTimestamp == lastTs) {
-                // 같은 밀리초면 시퀀스를 증가
-                long currentSequence = sequence.incrementAndGet();
-                if (currentSequence <= MAX_SEQUENCE) {
-                    return generateId(currentTimestamp, currentSequence);
-                }
-                else {
-                    // 시퀀스가 최대값을 초과하면 타임스탬프 갱신 대기
-                    while (currentTimestamp <= lastTs) {
-                        currentTimestamp = getEpochMilli();
-                    }
-                    // 타임스탬프가 변경되면 루프 다시 시작
-                }
+            else { // 3. 시간이 흐른 경우
+                sequence = 0L;
             }
+
+            lastTimestamp = currentTimestamp;
+
+            return generateId(currentTimestamp, sequence);
+
+        } finally {
+            lock.unlock();
         }
+    }
+
+    private long waitNextMillis(long lastTimestamp) {
+        long timestamp = getEpochMilli();
+        while (timestamp <= lastTimestamp) {
+            timestamp = getEpochMilli();
+        }
+        return timestamp;
     }
 
     private long getEpochMilli() {
         return System.currentTimeMillis() - STANDARD_EPOCH_MILLI;
-    }
-
-    private Optional<Long> initializeSequenceAndGetId(long lastTs, long currentTimestamp) {
-        if (lastTimestamp.compareAndSet(lastTs, currentTimestamp)) {
-            sequence.set(-1L);
-            return Optional.of(generateId(currentTimestamp, sequence.incrementAndGet()));
-        }
-        else return Optional.empty();
     }
 
     // Snowflake 스타일 ID 생성 (시간, 노드, 시퀀스 결합)
